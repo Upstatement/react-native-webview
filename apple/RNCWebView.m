@@ -23,6 +23,10 @@ static NSString *const MessageHandlerName = @"ReactNativeWebView";
 static NSURLCredential* clientAuthenticationCredential;
 static NSDictionary* customCertificatesForHost;
 
+NSString *const CUSTOM_SELECTOR = @"_CUSTOM_SELECTOR_";
+UITextPosition *selectionStart;
+UITextPosition* beginning;
+
 #if !TARGET_OS_OSX
 // runtime trick to remove WKWebView keyboard default toolbar
 // see: http://stackoverflow.com/questions/19033292/ios-7-uiwebview-keyboard-issue/19042279#19042279
@@ -191,6 +195,48 @@ static NSDictionary* customCertificatesForHost;
 - (void)dealloc
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)tappedMenuItem:(NSString *)eventType
+{
+    self.onSelection(@{
+        @"customMenuKey": eventType
+    });
+}
+
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)sel
+{
+    if ([super methodSignatureForSelector:sel]) {
+        return [super methodSignatureForSelector:sel];
+    }
+    return [super methodSignatureForSelector:@selector(tappedMenuItem:)];
+}
+
+- (void)forwardInvocation:(NSInvocation *)invocation
+{
+    NSString *sel = NSStringFromSelector([invocation selector]);
+    NSRange match = [sel rangeOfString:CUSTOM_SELECTOR];
+    if (match.location == 0) {
+        [self tappedMenuItem:[sel substringFromIndex:17]];
+    } else {
+        [super forwardInvocation:invocation];
+    }
+}
+
+- (BOOL)canBecomeFirstResponder
+{
+    return YES;
+}
+
+- (BOOL)canPerformAction:(SEL)action withSender:(id)sender
+{
+    NSString *sel = NSStringFromSelector(action);
+    NSRange match = [sel rangeOfString:CUSTOM_SELECTOR];
+
+    if (match.location == 0) {
+        return YES;
+    }
+    return NO;
 }
 
 /**
@@ -775,6 +821,21 @@ static NSDictionary* customCertificatesForHost;
 - (void)layoutSubviews
 {
   [super layoutSubviews];
+
+  UIMenuController *menuController = [UIMenuController sharedMenuController];
+  NSMutableArray *menuControllerItems = [NSMutableArray arrayWithCapacity:self.menuItems.count];
+  
+  for(NSString *menuItemName in self.menuItems) {
+      NSString *sel = [NSString stringWithFormat:@"%@%@", CUSTOM_SELECTOR, menuItemName];
+      UIMenuItem *item = [[UIMenuItem alloc] initWithTitle: menuItemName
+                                                    action: NSSelectorFromString(sel)];
+      
+      [menuControllerItems addObject: item];
+  }
+  
+  menuController.menuItems = menuControllerItems;
+  [menuController setTargetRect:self.bounds inView:self];
+  [menuController setMenuVisible:YES animated:YES];
 
   // Ensure webview takes the position and dimensions of RNCWebView
   _webView.frame = self.bounds;
